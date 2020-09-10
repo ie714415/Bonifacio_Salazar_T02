@@ -20,6 +20,8 @@
 
 #define STACK_PSR_DEFAULT 0x01000000
 
+static uint8_t priorArray[task_list.nTask] = {};
+
 typedef enum
 {
   stateReady,
@@ -40,6 +42,7 @@ typedef struct
   uint32_t stack[RTOS_STACK_SIZE];
   uint64_t local_tick;
   rtosTaskState_t state;
+  uint8_t priority;
 } task_t;
 
 struct
@@ -104,6 +107,7 @@ int main(void)
     (STACK_PSR_DEFAULT);
   task_list.tasks[0].state = stateReady;
   task_list.nTask++;
+  task_list.tasks[0].priority = 0;
 
   task_list.tasks[1].task_body = task1;
   task_list.tasks[1].sp = &(task_list.tasks[1].stack[RTOS_STACK_SIZE - 1])
@@ -114,6 +118,7 @@ int main(void)
     (STACK_PSR_DEFAULT);
   task_list.tasks[1].state = stateReady;
   task_list.nTask++;
+  task_list.tasks[1].priority = 2;
 
   task_list.tasks[2].task_body = task2;
   task_list.tasks[2].sp = &(task_list.tasks[2].stack[RTOS_STACK_SIZE - 1])
@@ -124,6 +129,7 @@ int main(void)
     (STACK_PSR_DEFAULT);
   task_list.tasks[2].state = stateReady;
   task_list.nTask++;
+  task_list.tasks[2].priority = 1;
 
   /* idle task*/
   task_list.tasks[task_list.nTask].task_body = taskIdel;
@@ -135,7 +141,9 @@ int main(void)
   task_list.tasks[task_list.nTask].stack[RTOS_STACK_SIZE - STACK_PSR_OFFSET] =
     (STACK_PSR_DEFAULT);
   task_list.tasks[task_list.nTask].state = stateReady;
+  task_list.tasks[task_list.nTask].priority = 4;
 
+  sortPriorities();
   NVIC_SetPriority(PendSV_IRQn, 0xFF);
 
   PRINTF("RTOS Init\n\r");
@@ -173,6 +181,8 @@ void task1(void) // LED Green
     GPIO_PortSet(BOARD_LED_BLUE_GPIO, 1u << BOARD_LED_BLUE_GPIO_PIN);
 
     PRINTF("Task_1\n\r");
+
+    rtosDelay(30);
   }
 }
 
@@ -185,8 +195,13 @@ void task2(void) // LED Blue
     GPIO_PortSet(BOARD_LED_GREEN_GPIO, 1u << BOARD_LED_GREEN_GPIO_PIN);
 
     PRINTF("Task_2\n\r");
+
+    rtosDelay(20);
   }
 }
+
+
+ 
 
 void taskIdel(void)
 {
@@ -194,6 +209,28 @@ void taskIdel(void)
     ;
 }
 
+
+void sortPriorities()
+{
+ 
+    /* Sort priorities to chose the next task to execute*/
+  for(uint8_t i = 0; i < task_list.nTask; i++)
+  {
+    priorArray[i] = task_list.task[i].priority;
+  }
+
+  for (uint8_t i = 0; i < task_list.nTask; i++)
+  {
+    uint8_t j = i;
+    while(j >= 0 && task_list.task[j].priority<task_list.task[j-1].priority)
+    {
+      uint8_t k = priorArray[j];
+      priorArray[j] = priorArray[j-1];
+      priorArray[j-1] = priorArray[j];
+      j--;
+    }  
+  }
+}
 void rtosStart(void)
 {
   task_list.global_tick = 0;
@@ -239,39 +276,50 @@ void rtosActivateWaitingTask(void)
 void rtosKernel(rtosContextSwitchFrom_t from)
 {
   uint8_t nextTask = task_list.nTask;
-  uint8_t findNextTask = task_list.current_task + 1;
+  static uint8_t findNextTask = 0;
   uint8_t foundNextTask = 0;
+  uint8_t idx;
+
+ 
 
   static uint8_t first = 1;
+  static uint8_t firstTask = task_list.current_task + 1;
+  static uint8_t lastTask;
   register uint32_t r0 asm("r0");
 
   (void) r0;
 
+
+
   /* calendarizador */
   do
   {
-    if (findNextTask < task_list.nTask)
-    {
-      if (stateReady == task_list.tasks[findNextTask].state
-        || stateRunning == task_list.tasks[findNextTask].state)
-      {
-        nextTask = findNextTask;
 
-        foundNextTask = 1;
-      }
-      else if (findNextTask == task_list.current_task)
-      {
-        foundNextTask = 1;
-      }
-      else
-      {
-        findNextTask++;
-      }
-    }
-    else
+
+   if(findNextTask < task_list.nTask)
+   {
+    if(stateReady == task_list.tasks[findNextTask].state
+        || stateRunning == task_list.tasks[findNextTask].state)
     {
-      findNextTask = 0;
+      for(uint8_t idx = 0; idx < task_list.nTask;  idx++)
+      {
+        if(priorArray[findNextTask] == task_list.tasks[idx].priority)
+        {
+          nextTask = idx;
+          foundNextTask = 1;
+          findNextTask ++;
+        }
+      }
     }
+   }
+   if(stateRunnin == task_list.tasks[nextTask].state)
+   {
+     foundNextTask = 1;
+   }
+   else {
+      findNextTask = 0;
+   }
+
   } while (!foundNextTask);
 
   task_list.next_task = nextTask;
