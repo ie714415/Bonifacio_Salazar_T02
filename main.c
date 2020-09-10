@@ -20,7 +20,9 @@
 
 #define STACK_PSR_DEFAULT 0x01000000
 
-static uint8_t priorArray[task_list.nTask] = {};
+#define NTASK 3
+
+static uint8_t priorArray[NTASK];
 
 typedef enum
 {
@@ -62,6 +64,8 @@ void task1(void);
 void task2(void);
 
 void taskIdel(void);
+
+void sortPriorities(void);
 
 void rtosStart(void);
 
@@ -200,33 +204,29 @@ void task2(void) // LED Blue
   }
 }
 
-
- 
-
 void taskIdel(void)
 {
   for (;;)
     ;
 }
 
-
-void sortPriorities()
+void sortPriorities(void)
 {
- 
+	uint8_t size = task_list.nTask;
     /* Sort priorities to chose the next task to execute*/
-  for(uint8_t i = 0; i < task_list.nTask; i++)
+  for(uint8_t i = 0; i < size; i++)
   {
-    priorArray[i] = task_list.task[i].priority;
+    priorArray[i] = task_list.tasks[i].priority;
   }
 
-  for (uint8_t i = 0; i < task_list.nTask; i++)
+  for (uint8_t i = 0; i < size; i++)
   {
     uint8_t j = i;
-    while(j >= 0 && task_list.task[j].priority<task_list.task[j-1].priority)
+    while(j >= 0 && task_list.tasks[j].priority < task_list.tasks[j-1].priority)
     {
       uint8_t k = priorArray[j];
       priorArray[j] = priorArray[j-1];
-      priorArray[j-1] = priorArray[j];
+      priorArray[j-1] = k;
       j--;
     }  
   }
@@ -280,46 +280,38 @@ void rtosKernel(rtosContextSwitchFrom_t from)
   uint8_t foundNextTask = 0;
   uint8_t idx;
 
- 
-
   static uint8_t first = 1;
-  static uint8_t firstTask = task_list.current_task + 1;
-  static uint8_t lastTask;
   register uint32_t r0 asm("r0");
 
   (void) r0;
 
-
-
   /* calendarizador */
   do
   {
-
-
    if(findNextTask < task_list.nTask)
    {
-    if(stateReady == task_list.tasks[findNextTask].state
-        || stateRunning == task_list.tasks[findNextTask].state)
-    {
-      for(uint8_t idx = 0; idx < task_list.nTask;  idx++)
-      {
-        if(priorArray[findNextTask] == task_list.tasks[idx].priority)
-        {
-          nextTask = idx;
-          foundNextTask = 1;
-          findNextTask ++;
-        }
-      }
-    }
+	   for(idx = 0; idx < task_list.nTask && !foundNextTask;  idx++)
+	   {
+		   if(priorArray[findNextTask] == task_list.tasks[idx].priority)
+		   {
+			   nextTask = idx;
+			   if(stateReady == task_list.tasks[nextTask].state
+			      || stateRunning == task_list.tasks[nextTask].state)
+			   {
+				   foundNextTask = 1;
+				   findNextTask ++;
+			   }
+			  if(nextTask == task_list.current_task)
+			   {
+				 foundNextTask = 1;
+			   }
+		   }
+	   }
    }
-   if(stateRunnin == task_list.tasks[nextTask].state)
+   else
    {
-     foundNextTask = 1;
-   }
-   else {
       findNextTask = 0;
    }
-
   } while (!foundNextTask);
 
   task_list.next_task = nextTask;
