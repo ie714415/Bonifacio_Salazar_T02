@@ -20,7 +20,7 @@
 
 #define STACK_PSR_DEFAULT 0x01000000
 
-#define NTASK 3
+#define NTASK 4
 
 static uint8_t priorArray[NTASK];
 
@@ -212,7 +212,7 @@ void taskIdel(void)
 
 void sortPriorities(void)
 {
-	uint8_t size = task_list.nTask;
+	uint8_t size = task_list.nTask + 1;
     /* Sort priorities to chose the next task to execute*/
   for(uint8_t i = 0; i < size; i++)
   {
@@ -224,9 +224,9 @@ void sortPriorities(void)
     uint8_t j = i;
     while(j >= 0 && task_list.tasks[j].priority < task_list.tasks[j-1].priority)
     {
-      uint8_t k = priorArray[j];
+      uint8_t temp = priorArray[j];
       priorArray[j] = priorArray[j-1];
-      priorArray[j-1] = k;
+      priorArray[j-1] = temp;
       j--;
     }  
   }
@@ -276,9 +276,9 @@ void rtosActivateWaitingTask(void)
 void rtosKernel(rtosContextSwitchFrom_t from)
 {
   uint8_t nextTask = task_list.nTask;
-  static uint8_t findNextTask = 0;
+  uint8_t findNextTask = 0;
   uint8_t foundNextTask = 0;
-  uint8_t idx;
+  uint8_t currentPriority = 0;
 
   static uint8_t first = 1;
   register uint32_t r0 asm("r0");
@@ -288,30 +288,25 @@ void rtosKernel(rtosContextSwitchFrom_t from)
   /* calendarizador */
   do
   {
-   if(findNextTask < task_list.nTask)
+   if(findNextTask > task_list.nTask)
    {
-	   for(idx = 0; idx < task_list.nTask && !foundNextTask;  idx++)
+	   findNextTask = 0;
+	   currentPriority ++;
+   }
+   if(priorArray[currentPriority] == task_list.tasks[findNextTask].priority)
+   {
+	   if (stateReady == task_list.tasks[findNextTask].state
+		   || stateRunning == task_list.tasks[findNextTask].state)
 	   {
-		   if(priorArray[findNextTask] == task_list.tasks[idx].priority)
-		   {
-			   nextTask = idx;
-			   if(stateReady == task_list.tasks[nextTask].state
-			      || stateRunning == task_list.tasks[nextTask].state)
-			   {
-				   foundNextTask = 1;
-				   findNextTask ++;
-			   }
-			  if(nextTask == task_list.current_task)
-			   {
-				 foundNextTask = 1;
-			   }
-		   }
+		   nextTask = findNextTask;
+		   foundNextTask = 1;
+	   }
+	   else if (findNextTask == task_list.current_task)
+	   {
+		   foundNextTask = 1;
 	   }
    }
-   else
-   {
-      findNextTask = 0;
-   }
+   findNextTask++;
   } while (!foundNextTask);
 
   task_list.next_task = nextTask;
